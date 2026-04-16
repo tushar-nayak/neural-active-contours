@@ -139,3 +139,90 @@ Optional overrides:
 ```bash
 EPOCHS=20 BATCH_SIZE=2 IMAGE_SIZE=192 ./scripts/train_and_compare.sh
 ```
+
+## Experiment Log
+
+### Dataset Setup
+
+Kvasir-SEG was selected over ISIC and BBBC038 for the first implementation
+because it is small, medical, 2D, and has clear polyp masks for evaluation. The
+dataset is downloaded from the official Simula host and extracted locally to:
+
+```text
+dataset/Kvasir-SEG/
+  images/
+  masks/
+```
+
+The dataset contains 1000 images and 1000 masks. The whole `dataset/` folder is
+ignored by Git, so the data stays local and is not pushed to GitHub.
+
+### Baseline Smoke Test
+
+The first smoke test confirmed that the code path worked:
+
+- Kvasir images and masks loaded correctly.
+- Training ran for both `image` and `features` external-energy modes.
+- Evaluation produced Dice/IoU metrics and qualitative prediction panels.
+
+However, the one-epoch smoke test did not produce meaningful masks. This was
+expected because it used only a few samples and was intended to catch runtime
+errors, not train a usable model.
+
+### First Full-Run Failure Mode
+
+The first longer image-gradient run showed a clear degenerate solution:
+
+```text
+epoch 001 loss=1.3463 val_dice=0.2732 val_iou=0.1736 pred_area=0.909 mask_area=0.159
+epoch 002 loss=1.2392 val_dice=0.2547 val_iou=0.1595 pred_area=0.993 mask_area=0.159
+epoch 003 loss=1.2207 val_dice=0.2547 val_iou=0.1595 pred_area=0.994 mask_area=0.159
+```
+
+The important signal is `pred_area`, not just Dice or IoU. The model was
+predicting almost the entire image as polyp, while the real masks covered about
+16% of the image. The Dice and IoU values were therefore not evidence of useful
+segmentation; they were the overlap produced by an almost all-foreground mask.
+
+### Diagnostics Added
+
+To make this failure mode visible, training and evaluation now log:
+
+- `pred_area`: fraction of pixels predicted foreground after thresholding.
+- `soft_area`: average predicted probability before thresholding.
+- `mask_area`: fraction of pixels marked foreground in the evaluation mask.
+
+Interpretation:
+
+- `pred_area` near `1.000` means the model is predicting almost everything.
+- `pred_area` near `0.000` means the model is predicting almost nothing.
+- `soft_area` near the expected mask area but poor `pred_area` means the model
+  may be poorly calibrated around the fixed threshold.
+
+### Loss Correction
+
+The first loss version allowed a trivial all-foreground solution. Two issues were
+identified:
+
+- The finite-difference boundary energy added a small artificial value even for
+  constant masks.
+- The area prior was too weak and allowed predictions covering almost the whole
+  image.
+
+The loss was updated to:
+
+- make constant masks have zero boundary energy;
+- use an edge-attraction reward based on image or feature energy;
+- strengthen the area prior around a plausible Kvasir polyp size;
+- print `soft_area` during training so threshold calibration can be monitored.
+
+The next run should be started fresh after pulling the latest branch:
+
+```bash
+git pull
+./scripts/train_and_compare.sh
+```
+
+For a healthy run, `pred_area` should not stay near `1.000`, and `soft_area`
+should generally stay closer to the Kvasir mask area range rather than collapsing
+to all foreground or all background.
