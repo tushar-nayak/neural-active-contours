@@ -127,3 +127,15 @@ Evaluate the best checkpoint:
 ```bash
 python code/evaluate.py --checkpoint checkpoints/best.pt --split test
 ```
+
+Train both variants and compare them:
+
+```bash
+./scripts/train_and_compare.sh
+```
+
+Optional overrides:
+
+```bash
+EPOCHS=20 BATCH_SIZE=2 IMAGE_SIZE=192 ./scripts/train_and_compare.sh
+```
