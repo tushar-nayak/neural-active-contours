@@ -85,8 +85,12 @@ echo "== Evaluating learned-feature model =="
 
 image_dice="$(awk -F= '/^dice=/{print $2}' "$RUN_DIR/image-gradient-eval.log" | tail -1)"
 image_iou="$(awk -F= '/^iou=/{print $2}' "$RUN_DIR/image-gradient-eval.log" | tail -1)"
+image_pred_area="$(awk -F= '/^pred_area=/{print $2}' "$RUN_DIR/image-gradient-eval.log" | tail -1)"
+image_target_area="$(awk -F= '/^target_area=/{print $2}' "$RUN_DIR/image-gradient-eval.log" | tail -1)"
 feature_dice="$(awk -F= '/^dice=/{print $2}' "$RUN_DIR/learned-features-eval.log" | tail -1)"
 feature_iou="$(awk -F= '/^iou=/{print $2}' "$RUN_DIR/learned-features-eval.log" | tail -1)"
+feature_pred_area="$(awk -F= '/^pred_area=/{print $2}' "$RUN_DIR/learned-features-eval.log" | tail -1)"
+feature_target_area="$(awk -F= '/^target_area=/{print $2}' "$RUN_DIR/learned-features-eval.log" | tail -1)"
 
 {
   echo "Comparison summary"
@@ -94,9 +98,9 @@ feature_iou="$(awk -F= '/^iou=/{print $2}' "$RUN_DIR/learned-features-eval.log" 
   echo "Run directory: $RUN_DIR"
   echo "Split: $SPLIT"
   echo
-  printf "%-26s %-10s %-10s\n" "model" "dice" "iou"
-  printf "%-26s %-10s %-10s\n" "image-gradient" "$image_dice" "$image_iou"
-  printf "%-26s %-10s %-10s\n" "learned-features" "$feature_dice" "$feature_iou"
+  printf "%-26s %-10s %-10s %-12s %-12s\n" "model" "dice" "iou" "pred_area" "mask_area"
+  printf "%-26s %-10s %-10s %-12s %-12s\n" "image-gradient" "$image_dice" "$image_iou" "$image_pred_area" "$image_target_area"
+  printf "%-26s %-10s %-10s %-12s %-12s\n" "learned-features" "$feature_dice" "$feature_iou" "$feature_pred_area" "$feature_target_area"
   echo
   echo "Qualitative samples:"
   echo "  $IMAGE_EVAL"
@@ -105,4 +109,3 @@ feature_iou="$(awk -F= '/^iou=/{print $2}' "$RUN_DIR/learned-features-eval.log" 
 
 echo
 echo "Done. Summary written to $SUMMARY"
-

@@ -128,4 +128,3 @@ def active_contour_loss(
         "energy_prior": energy_prior.detach(),
     }
     return total, parts
-

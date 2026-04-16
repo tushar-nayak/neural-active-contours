@@ -59,6 +59,9 @@ def main() -> None:
 
     dice_total = 0.0
     iou_total = 0.0
+    pred_area_total = 0.0
+    target_area_total = 0.0
+    soft_area_total = 0.0
     batches = 0
     saved = 0
 
@@ -69,6 +72,9 @@ def main() -> None:
         metrics = segmentation_metrics(probability, mask, threshold=args.threshold)
         dice_total += float(metrics["dice"])
         iou_total += float(metrics["iou"])
+        pred_area_total += float(metrics["pred_area"])
+        target_area_total += float(metrics["target_area"])
+        soft_area_total += float(metrics["soft_area"])
         batches += 1
 
         for item in range(image.shape[0]):
@@ -86,10 +92,12 @@ def main() -> None:
     print(f"split={args.split}")
     print(f"dice={dice_total / max(1, batches):.4f}")
     print(f"iou={iou_total / max(1, batches):.4f}")
+    print(f"pred_area={pred_area_total / max(1, batches):.4f}")
+    print(f"target_area={target_area_total / max(1, batches):.4f}")
+    print(f"soft_area={soft_area_total / max(1, batches):.4f}")
     if args.save_samples:
         print(f"saved_samples={min(saved, args.save_samples)} to {args.output_dir}")
 
 
 if __name__ == "__main__":
     main()
-

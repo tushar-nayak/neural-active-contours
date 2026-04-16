@@ -32,5 +32,7 @@ def segmentation_metrics(
     return {
         "dice": dice_score(prediction, target),
         "iou": iou_score(prediction, target),
+        "pred_area": prediction.mean(),
+        "target_area": target.mean(),
+        "soft_area": probability.mean(),
     }
-

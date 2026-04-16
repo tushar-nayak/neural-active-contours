@@ -84,6 +84,9 @@ def validate(
     model.eval()
     total_dice = 0.0
     total_iou = 0.0
+    total_pred_area = 0.0
+    total_target_area = 0.0
+    total_soft_area = 0.0
     batches = 0
 
     for batch in tqdm(loader, desc="val", leave=False):
@@ -93,11 +96,17 @@ def validate(
         metrics = segmentation_metrics(probability, mask, threshold=threshold)
         total_dice += float(metrics["dice"])
         total_iou += float(metrics["iou"])
+        total_pred_area += float(metrics["pred_area"])
+        total_target_area += float(metrics["target_area"])
+        total_soft_area += float(metrics["soft_area"])
         batches += 1
 
     return {
         "dice": total_dice / max(1, batches),
         "iou": total_iou / max(1, batches),
+        "pred_area": total_pred_area / max(1, batches),
+        "target_area": total_target_area / max(1, batches),
+        "soft_area": total_soft_area / max(1, batches),
     }
 
 
@@ -160,7 +169,9 @@ def main() -> None:
             f"epoch {epoch:03d} "
             f"loss={train_metrics.get('total', 0.0):.4f} "
             f"val_dice={val_metrics['dice']:.4f} "
-            f"val_iou={val_metrics['iou']:.4f}"
+            f"val_iou={val_metrics['iou']:.4f} "
+            f"pred_area={val_metrics['pred_area']:.3f} "
+            f"mask_area={val_metrics['target_area']:.3f}"
         )
 
         save_checkpoint(args.output_dir / "last.pt", model, optimizer, epoch, config, metrics)
@@ -173,4 +184,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
