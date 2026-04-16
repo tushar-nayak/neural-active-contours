@@ -8,12 +8,12 @@ import torch.nn.functional as F
 
 @dataclass(frozen=True)
 class LossWeights:
-    edge: float = 2.0
+    edge: float = 3.0
     length: float = 0.15
-    curvature: float = 0.05
+    curvature: float = 0.03
     region: float = 1.0
-    area: float = 0.20
-    binary: float = 0.05
+    area: float = 12.0
+    binary: float = 0.20
     energy_prior: float = 0.05
 
 
@@ -27,7 +27,8 @@ def rgb_to_gray(image: torch.Tensor) -> torch.Tensor:
 def finite_difference_energy(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     dx = F.pad(x[..., :, 1:] - x[..., :, :-1], (0, 1, 0, 0))
     dy = F.pad(x[..., 1:, :] - x[..., :-1, :], (0, 0, 0, 1))
-    return torch.sqrt(dx.pow(2) + dy.pow(2) + eps)
+    energy = torch.sqrt(dx.pow(2) + dy.pow(2) + eps)
+    return (energy - eps**0.5).clamp_min(0.0)
 
 
 def normalize_per_sample(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
@@ -68,13 +69,15 @@ def chan_vese_region_loss(image: torch.Tensor, probability: torch.Tensor, eps: f
 
 def area_prior_loss(
     probability: torch.Tensor,
-    min_fraction: float = 0.01,
-    max_fraction: float = 0.70,
+    target_fraction: float = 0.18,
+    min_fraction: float = 0.03,
+    max_fraction: float = 0.45,
 ) -> torch.Tensor:
     area = probability.mean(dim=(1, 2, 3))
+    target_penalty = (area - target_fraction).pow(2)
     small_penalty = F.relu(min_fraction - area).pow(2)
     large_penalty = F.relu(area - max_fraction).pow(2)
-    return (small_penalty + large_penalty).mean()
+    return (target_penalty + small_penalty + large_penalty).mean()
 
 
 def active_contour_loss(
@@ -100,7 +103,7 @@ def active_contour_loss(
     else:
         raise ValueError(f"Unknown external mode: {external_mode}")
 
-    edge = (boundary * (1.0 - external_energy)).sum() / boundary.sum().clamp_min(1e-6)
+    edge = -(boundary * external_energy).mean()
     length = boundary.mean()
     curve = curvature_loss(probability)
     region = chan_vese_region_loss(image, probability)

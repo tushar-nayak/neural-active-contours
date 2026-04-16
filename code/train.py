@@ -171,6 +171,7 @@ def main() -> None:
             f"val_dice={val_metrics['dice']:.4f} "
             f"val_iou={val_metrics['iou']:.4f} "
             f"pred_area={val_metrics['pred_area']:.3f} "
+            f"soft_area={val_metrics['soft_area']:.3f} "
             f"mask_area={val_metrics['target_area']:.3f}"
         )
 
