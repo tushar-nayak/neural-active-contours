@@ -1,0 +1,16 @@
+Goal: use generated labels to turn the problem into weakly supervised training.
+
+Do this first:
+1. Choose one pseudo-label generator and make the pipeline deterministic.
+2. Filter out obviously bad masks before training.
+3. Train a standard segmentation model on the pseudo-labels.
+
+Then:
+1. Compare pseudo-label quality against true labels on validation data.
+2. Refine the pseudo-labels if the model learns obvious artifacts.
+3. Only add contour losses after the pseudo-label baseline is working.
+
+Do not:
+1. Assume pseudo-labels are correct without checking them.
+2. Mix too many pseudo-label sources at once.
+3. Let the label-generation step become a one-off manual process.

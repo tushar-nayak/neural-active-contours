@@ -1,0 +1,16 @@
+Goal: build a plain supervised U-Net baseline and treat it as the benchmark.
+
+Do this first:
+1. Implement the smallest clean U-Net that trains reliably on Kvasir-SEG.
+2. Use Dice + BCE as the main objective.
+3. Track Dice, IoU, predicted area, and qualitative overlays.
+
+Then:
+1. Tune only the minimum needed to get a stable baseline.
+2. Save the best checkpoint by validation Dice.
+3. Use this branch as the reference when comparing every other approach.
+
+Do not:
+1. Add contour losses here.
+2. Add pseudo-labeling here.
+3. Add self-supervised pretraining unless it is needed for the baseline to work.
