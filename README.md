@@ -157,6 +157,16 @@ The main open problem is objective quality: the current loss is good enough to
 avoid trivial collapse, but not yet strong enough to produce consistently tight
 segmentation contours.
 
+## Branch Plans
+
+The next-stage experiment paths are documented here:
+
+- [Branch plans index](./branch-plans/README.md)
+- [U-Net baseline](./branch-plans/unet-baseline/README.md)
+- [Hybrid contour regularizer](./branch-plans/hybrid-contour-regularizer/README.md)
+- [Pseudo-label segmentation](./branch-plans/pseudo-label-segmentation/README.md)
+- [Self-supervised pretrain](./branch-plans/self-supervised-pretrain/README.md)
+
 ## Quick Start
 
 Install dependencies:

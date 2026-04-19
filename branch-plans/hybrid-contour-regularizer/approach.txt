@@ -1,0 +1,16 @@
+Goal: make contour energy a regularizer, not the main supervision source.
+
+Do this first:
+1. Reuse the supervised U-Net baseline as the main predictor.
+2. Add one contour loss term behind a small coefficient.
+3. Validate whether the contour term improves boundary shape without hurting Dice.
+
+Then:
+1. Sweep the contour-weight coefficient carefully.
+2. Compare against the plain U-Net baseline on the same split.
+3. Keep only the contour terms that improve or preserve segmentation quality.
+
+Do not:
+1. Remove the supervised loss.
+2. Let contour terms dominate the optimization.
+3. Optimize for elegance if the masks get worse.
