@@ -1,0 +1,16 @@
+Goal: improve the encoder first, then attach segmentation.
+
+Do this first:
+1. Pick a self-supervised objective that is practical to run here.
+2. Pretrain the encoder on Kvasir images or a broader unlabeled image pool.
+3. Fine-tune the pretrained encoder with a supervised segmentation head.
+
+Then:
+1. Measure whether pretraining improves Dice, IoU, or convergence speed.
+2. Compare against the same architecture trained from scratch.
+3. Keep the pretraining setup simple enough to reproduce.
+
+Do not:
+1. Overcomplicate the pretraining recipe.
+2. Change the segmentation head and the pretraining objective at the same time.
+3. Claim success unless it improves the downstream segmentation task.
