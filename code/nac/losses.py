@@ -8,13 +8,17 @@ import torch.nn.functional as F
 
 @dataclass(frozen=True)
 class LossWeights:
-    edge: float = 3.0
-    length: float = 0.15
+    edge: float = 4.0
+    length: float = 0.10
     curvature: float = 0.03
     region: float = 1.0
-    area: float = 12.0
+    compactness: float = 0.05
+    area: float = 10.0
     binary: float = 0.20
     energy_prior: float = 0.05
+    area_target: float = 0.10
+    area_min: float = 0.015
+    area_max: float = 0.35
 
 
 def rgb_to_gray(image: torch.Tensor) -> torch.Tensor:
@@ -48,6 +52,17 @@ def feature_gradient_energy(features: torch.Tensor) -> torch.Tensor:
     return normalize_per_sample(energy)
 
 
+def boundary_alignment_loss(boundary: torch.Tensor, external_energy: torch.Tensor) -> torch.Tensor:
+    boundary = normalize_per_sample(boundary)
+    return F.mse_loss(boundary, external_energy)
+
+
+def compactness_loss(probability: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
+    perimeter = finite_difference_energy(probability).mean(dim=(1, 2, 3))
+    area = probability.mean(dim=(1, 2, 3)).clamp_min(eps)
+    return (perimeter.pow(2) / area).mean()
+
+
 def curvature_loss(probability: torch.Tensor) -> torch.Tensor:
     ddx = probability[..., :, 2:] - 2 * probability[..., :, 1:-1] + probability[..., :, :-2]
     ddy = probability[..., 2:, :] - 2 * probability[..., 1:-1, :] + probability[..., :-2, :]
@@ -69,10 +84,12 @@ def chan_vese_region_loss(image: torch.Tensor, probability: torch.Tensor, eps: f
 
 def area_prior_loss(
     probability: torch.Tensor,
-    target_fraction: float = 0.18,
-    min_fraction: float = 0.03,
-    max_fraction: float = 0.45,
+    target_fraction: float = 0.10,
+    min_fraction: float = 0.015,
+    max_fraction: float = 0.35,
 ) -> torch.Tensor:
+    # Heuristic Kvasir size prior: it nudges the model toward plausible polyp area
+    # without pretending we know the exact foreground fraction.
     area = probability.mean(dim=(1, 2, 3))
     target_penalty = (area - target_fraction).pow(2)
     small_penalty = F.relu(min_fraction - area).pow(2)
@@ -103,11 +120,17 @@ def active_contour_loss(
     else:
         raise ValueError(f"Unknown external mode: {external_mode}")
 
-    edge = -(boundary * external_energy).mean()
+    edge = boundary_alignment_loss(boundary, external_energy)
     length = boundary.mean()
     curve = curvature_loss(probability)
     region = chan_vese_region_loss(image, probability)
-    area = area_prior_loss(probability)
+    compactness = compactness_loss(probability)
+    area = area_prior_loss(
+        probability,
+        target_fraction=weights.area_target,
+        min_fraction=weights.area_min,
+        max_fraction=weights.area_max,
+    )
     binary = (probability * (1.0 - probability)).mean()
 
     total = (
@@ -115,6 +138,7 @@ def active_contour_loss(
         + weights.length * length
         + weights.curvature * curve
         + weights.region * region
+        + weights.compactness * compactness
         + weights.area * area
         + weights.binary * binary
         + weights.energy_prior * energy_prior
@@ -126,6 +150,7 @@ def active_contour_loss(
         "length": length.detach(),
         "curvature": curve.detach(),
         "region": region.detach(),
+        "compactness": compactness.detach(),
         "area": area.detach(),
         "binary": binary.detach(),
         "energy_prior": energy_prior.detach(),

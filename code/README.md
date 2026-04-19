@@ -44,6 +44,13 @@ Learned feature-gradient external energy:
 python code/train.py --external-mode features --epochs 50 --batch-size 4
 ```
 
+Training now calibrates the validation decision threshold by default. Use
+`--threshold 0.5` for a fixed cutoff or `--threshold auto` during evaluation
+to sweep thresholds on the chosen split.
+
+The default comparison script now runs the image-gradient baseline only; set
+`COMPARE_FEATURES=1` if you want the learned-feature branch included too.
+
 For a quick smoke run:
 
 ```bash
@@ -64,4 +71,3 @@ python code/predict.py --checkpoint checkpoints/best.pt --split test --max-image
 
 Outputs are written to ignored local folders such as `checkpoints/` and
 `predictions/`.
-

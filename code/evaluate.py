@@ -8,7 +8,13 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from nac.data import build_datasets
-from nac.metrics import segmentation_metrics
+from nac.metrics import (
+    accumulate_threshold_sweep,
+    combine_threshold_sweeps,
+    make_threshold_sweep,
+    metrics_from_threshold_sweep,
+    segmentation_metrics,
+)
 from nac.model import TinyNACNet
 from nac.utils import default_device, load_checkpoint, repo_root
 from nac.visualize import save_prediction_panel
@@ -22,7 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--split", choices=["train", "val", "test"], default="test")
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--num-workers", type=int, default=2)
-    parser.add_argument("--threshold", type=float, default=0.5)
+    parser.add_argument("--threshold", default=None)
     parser.add_argument("--save-samples", type=int, default=8)
     parser.add_argument("--output-dir", type=Path, default=root / "outputs" / "eval")
     parser.add_argument("--device", default=None)
@@ -37,12 +43,21 @@ def select_split(args: argparse.Namespace):
     return {"train": train_set, "val": val_set, "test": test_set}[args.split]
 
 
+def resolve_threshold(args: argparse.Namespace, checkpoint_config: dict) -> float | None:
+    if args.threshold is None:
+        return float(checkpoint_config.get("decision_threshold", 0.5))
+    if isinstance(args.threshold, str) and args.threshold.lower() == "auto":
+        return None
+    return float(args.threshold)
+
+
 @torch.no_grad()
 def main() -> None:
     args = parse_args()
     device = torch.device(args.device) if args.device else default_device()
     checkpoint = load_checkpoint(args.checkpoint, device)
     args.checkpoint_config = checkpoint.get("config", {})
+    threshold = resolve_threshold(args, args.checkpoint_config)
 
     model = TinyNACNet(base_channels=int(args.checkpoint_config.get("base_channels", 24))).to(device)
     model.load_state_dict(checkpoint["model_state"])
@@ -64,17 +79,22 @@ def main() -> None:
     soft_area_total = 0.0
     batches = 0
     saved = 0
+    sweep_items = []
+    threshold_grid = make_threshold_sweep(device) if threshold is None else None
 
     for batch in tqdm(loader, desc=f"evaluate:{args.split}"):
         image = batch["image"].to(device)
         mask = batch["mask"].to(device)
         probability = torch.sigmoid(model(image)["mask_logits"])
-        metrics = segmentation_metrics(probability, mask, threshold=args.threshold)
-        dice_total += float(metrics["dice"])
-        iou_total += float(metrics["iou"])
-        pred_area_total += float(metrics["pred_area"])
-        target_area_total += float(metrics["target_area"])
-        soft_area_total += float(metrics["soft_area"])
+        soft_area_total += float(probability.mean())
+        if threshold is None:
+            sweep_items.append(accumulate_threshold_sweep(probability, mask, threshold_grid))
+        else:
+            metrics = segmentation_metrics(probability, mask, threshold=threshold)
+            dice_total += float(metrics["dice"])
+            iou_total += float(metrics["iou"])
+            pred_area_total += float(metrics["pred_area"])
+            target_area_total += float(metrics["target_area"])
         batches += 1
 
         for item in range(image.shape[0]):
@@ -90,10 +110,19 @@ def main() -> None:
             saved += 1
 
     print(f"split={args.split}")
-    print(f"dice={dice_total / max(1, batches):.4f}")
-    print(f"iou={iou_total / max(1, batches):.4f}")
-    print(f"pred_area={pred_area_total / max(1, batches):.4f}")
-    print(f"target_area={target_area_total / max(1, batches):.4f}")
+    if threshold is None:
+        metrics = metrics_from_threshold_sweep(combine_threshold_sweeps(sweep_items))
+        print(f"threshold={float(metrics['threshold']):.4f}")
+        print(f"dice={float(metrics['dice']):.4f}")
+        print(f"iou={float(metrics['iou']):.4f}")
+        print(f"pred_area={float(metrics['pred_area']):.4f}")
+        print(f"target_area={float(metrics['target_area']):.4f}")
+    else:
+        print(f"threshold={threshold:.4f}")
+        print(f"dice={dice_total / max(1, batches):.4f}")
+        print(f"iou={iou_total / max(1, batches):.4f}")
+        print(f"pred_area={pred_area_total / max(1, batches):.4f}")
+        print(f"target_area={target_area_total / max(1, batches):.4f}")
     print(f"soft_area={soft_area_total / max(1, batches):.4f}")
     if args.save_samples:
         print(f"saved_samples={min(saved, args.save_samples)} to {args.output_dir}")

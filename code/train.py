@@ -9,9 +9,21 @@ from tqdm import tqdm
 
 from nac.data import build_datasets
 from nac.losses import LossWeights, active_contour_loss
-from nac.metrics import segmentation_metrics
+from nac.metrics import (
+    accumulate_threshold_sweep,
+    combine_threshold_sweeps,
+    make_threshold_sweep,
+    metrics_from_threshold_sweep,
+    segmentation_metrics,
+)
 from nac.model import TinyNACNet
 from nac.utils import default_device, repo_root, save_checkpoint, save_json, set_seed
+
+
+def parse_threshold(value: str) -> float | None:
+    if value.lower() == "auto":
+        return None
+    return float(value)
 
 
 def parse_args() -> argparse.Namespace:
@@ -27,7 +39,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight-decay", type=float, default=1e-5)
     parser.add_argument("--seed", type=int, default=7)
-    parser.add_argument("--threshold", type=float, default=0.5)
+    parser.add_argument("--threshold", default="auto")
+    parser.add_argument("--calibration-steps", type=int, default=19)
     parser.add_argument("--limit-train", type=int, default=0)
     parser.add_argument("--limit-val", type=int, default=0)
     parser.add_argument("--base-channels", type=int, default=24)
@@ -79,7 +92,8 @@ def validate(
     model: TinyNACNet,
     loader: DataLoader,
     device: torch.device,
-    threshold: float,
+    threshold: float | None,
+    calibration_steps: int,
 ) -> dict[str, float]:
     model.eval()
     total_dice = 0.0
@@ -88,18 +102,35 @@ def validate(
     total_target_area = 0.0
     total_soft_area = 0.0
     batches = 0
+    sweep_items = []
+    threshold_grid = make_threshold_sweep(device, steps=calibration_steps) if threshold is None else None
 
     for batch in tqdm(loader, desc="val", leave=False):
         image = batch["image"].to(device)
         mask = batch["mask"].to(device)
         probability = torch.sigmoid(model(image)["mask_logits"])
-        metrics = segmentation_metrics(probability, mask, threshold=threshold)
-        total_dice += float(metrics["dice"])
-        total_iou += float(metrics["iou"])
-        total_pred_area += float(metrics["pred_area"])
-        total_target_area += float(metrics["target_area"])
-        total_soft_area += float(metrics["soft_area"])
+        if threshold is None:
+            total_soft_area += float(probability.mean())
+            sweep_items.append(accumulate_threshold_sweep(probability, mask, threshold_grid))
+        else:
+            metrics = segmentation_metrics(probability, mask, threshold=threshold)
+            total_dice += float(metrics["dice"])
+            total_iou += float(metrics["iou"])
+            total_pred_area += float(metrics["pred_area"])
+            total_target_area += float(metrics["target_area"])
+            total_soft_area += float(metrics["soft_area"])
         batches += 1
+
+    if threshold is None:
+        metrics = metrics_from_threshold_sweep(combine_threshold_sweeps(sweep_items))
+        return {
+            "dice": float(metrics["dice"]),
+            "iou": float(metrics["iou"]),
+            "pred_area": float(metrics["pred_area"]),
+            "target_area": float(metrics["target_area"]),
+            "soft_area": total_soft_area / max(1, batches),
+            "threshold": float(metrics["threshold"]),
+        }
 
     return {
         "dice": total_dice / max(1, batches),
@@ -107,6 +138,7 @@ def validate(
         "pred_area": total_pred_area / max(1, batches),
         "target_area": total_target_area / max(1, batches),
         "soft_area": total_soft_area / max(1, batches),
+        "threshold": float(threshold),
     }
 
 
@@ -114,6 +146,7 @@ def main() -> None:
     args = parse_args()
     set_seed(args.seed)
     device = torch.device(args.device) if args.device else default_device()
+    threshold = parse_threshold(args.threshold)
 
     train_set, val_set, _ = build_datasets(
         args.data_root,
@@ -149,6 +182,7 @@ def main() -> None:
     config["data_root"] = str(config["data_root"])
     config["output_dir"] = str(config["output_dir"])
     config["device"] = str(device)
+    config["threshold"] = args.threshold
     save_json(config, args.output_dir / "config.json")
 
     best_dice = -1.0
@@ -161,15 +195,32 @@ def main() -> None:
             args.external_mode,
             weights,
         )
-        val_metrics = validate(model, val_loader, device, threshold=args.threshold)
+        val_metrics = validate(
+            model,
+            val_loader,
+            device,
+            threshold=threshold,
+            calibration_steps=args.calibration_steps,
+        )
         metrics = {f"train_{k}": v for k, v in train_metrics.items()}
         metrics.update({f"val_{k}": v for k, v in val_metrics.items()})
+        config["decision_threshold"] = val_metrics["threshold"]
+        save_json(config, args.output_dir / "config.json")
 
         print(
             f"epoch {epoch:03d} "
             f"loss={train_metrics.get('total', 0.0):.4f} "
+            f"edge={train_metrics.get('edge', 0.0):.4f} "
+            f"len={train_metrics.get('length', 0.0):.4f} "
+            f"curv={train_metrics.get('curvature', 0.0):.4f} "
+            f"region={train_metrics.get('region', 0.0):.4f} "
+            f"compact={train_metrics.get('compactness', 0.0):.4f} "
+            f"area={train_metrics.get('area', 0.0):.4f} "
+            f"binary={train_metrics.get('binary', 0.0):.4f} "
+            f"prior={train_metrics.get('energy_prior', 0.0):.4f} "
             f"val_dice={val_metrics['dice']:.4f} "
             f"val_iou={val_metrics['iou']:.4f} "
+            f"val_thr={val_metrics['threshold']:.2f} "
             f"pred_area={val_metrics['pred_area']:.3f} "
             f"soft_area={val_metrics['soft_area']:.3f} "
             f"mask_area={val_metrics['target_area']:.3f}"
